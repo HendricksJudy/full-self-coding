@@ -4,12 +4,13 @@ import { DockerInstance, DockerRunStatus } from './dockerInstance';
 import { analyzerPrompt } from './prompts/analyzerPrompt';
 import { getCodingStyle } from './codingStyle';
 import { getWorkStyleDescription, WorkStyle } from './workStyle';
+import { trimJSON } from './utils/trimJSON';
 
 /**
  * Analyzes the codebase and generates a list of tasks to be executed
  * @returns Promise<Task[]> Array of tasks identified from the codebase analysis
  */
-export async function analyzeCodebase(config: Config, gitRemoteUrl: string): Promise<Task[]> {
+export async function analyzeCodebase(config: Config, gitRemoteUrl: string, shutdownContainer: boolean = true): Promise<Task[]> {
     if (config.agentType !== SWEAgentType.GEMINI_CLI) {
         throw new Error(`Agent type ${config.agentType} is not implemented yet.`);
     }
@@ -29,6 +30,30 @@ export async function analyzeCodebase(config: Config, gitRemoteUrl: string): Pro
         commandsToRunInDocker.push(`git clone ${gitRemoteUrl} /app/repo`);
         commandsToRunInDocker.push(`cd /app/repo`);
 
+
+
+
+
+        // If swe agent is gemini-cli, create the analyzer prompt, start the gemini cli in headeless mode and yolo mode, gemini -p "ANALYZER_PROMPT" --yolo;
+        const workStyleDescription = await getWorkStyleDescription(config.workStyle || WorkStyle.DEFAULT, { customLabel: config.customizedWorkStyle });
+        const codingStyleDescription = getCodingStyle(config.codingStyleLevel || 0);
+
+        const prompt = analyzerPrompt(workStyleDescription, codingStyleDescription, config);
+        commandsToRunInDocker.push(`mkdir -p ./fsc`);
+        commandsToRunInDocker.push(`echo "${prompt}" > ./fsc/prompt.txt`);
+        const setupCommands = [
+            "apt-get update",
+            "apt-get install -y curl",
+            "curl -fsSL https://deb.nodesource.com/setup_20.x | bash -",
+            "apt-get install -y nodejs",
+            //"npm install -g @google/gemini-cli",
+            //"export GEMINI_API_KEY='AIzaSyA-v_UD5AHnDvHBZQc2BWf_UQQYebKOkeo'",
+        ];
+
+        for (const cmd of setupCommands) {
+            commandsToRunInDocker.push(cmd);
+        }
+
         // 4. Based on the config object, check if api key needs to be export in terminal for gemini cli, codex or claude code
         if (config.googleGeminiApiKey) {
             commandsToRunInDocker.push(`export GEMINI_API_KEY=${config.googleGeminiApiKey}`);
@@ -45,18 +70,17 @@ export async function analyzeCodebase(config: Config, gitRemoteUrl: string): Pro
             commandsToRunInDocker.push(`npm install -g @google/gemini-cli`);
         }
 
-        // If swe agent is gemini-cli, create the analyzer prompt, start the gemini cli in headeless mode and yolo mode, gemini -p "ANALYZER_PROMPT" --yolo;
-        const workStyleDescription = await getWorkStyleDescription(config.workStyle || WorkStyle.DEFAULT, { customLabel: config.customizedWorkStyle });
-        const codingStyleDescription = getCodingStyle(config.codingStyleLevel || 0);
-
-        const prompt = analyzerPrompt(workStyleDescription, codingStyleDescription, config);
-        commandsToRunInDocker.push(`mkdir -p ./fsc`);
-        commandsToRunInDocker.push(`echo "${prompt}" > ./fsc/prompt.txt`);
         commandsToRunInDocker.push(`gemini -p "all the task descriptions are located at ./fsc/prompt.txt, please read and execute" --yolo`);
+
+        console.log("Commands to run in Docker:");
+        for (const command of commandsToRunInDocker) {
+            console.log(command);
+        }
+
+        console.log("The container name is:", docker.getContainerName());
 
         // Execute all commands in Docker
         const dockerResult = await docker.runCommands(
-            containerName,
             commandsToRunInDocker,
             config.dockerTimeoutSeconds || 300
         );
@@ -70,7 +94,6 @@ export async function analyzeCodebase(config: Config, gitRemoteUrl: string): Pro
         // Assuming gemini cli writes to /app/repo/fsc/tasks.json inside the container
         const readTasksCommand = `cat /app/repo/fsc/tasks.json`;
         const readTasksResult = await docker.runCommands(
-            containerName,
             [readTasksCommand],
             60 // Short timeout for reading a file
         );
@@ -81,7 +104,9 @@ export async function analyzeCodebase(config: Config, gitRemoteUrl: string): Pro
         }
 
         try {
-            tasks = JSON.parse(readTasksResult.output);
+            const outputTasksInString = trimJSON(readTasksResult.output);
+            console.log("***Output tasks in string:\n\n", outputTasksInString);
+            tasks = JSON.parse(outputTasksInString);
         } catch (error) {
             console.error("Error parsing tasks.json:", error);
             throw new Error(`Error parsing tasks.json: ${error}`);
@@ -89,7 +114,7 @@ export async function analyzeCodebase(config: Config, gitRemoteUrl: string): Pro
     } finally {
         // Ensure the Docker container is shut down
         if (containerName) {
-            await docker.shutdownContainer(containerName);
+            //await docker.shutdownContainer(containerName);
         }
     }
     return tasks;

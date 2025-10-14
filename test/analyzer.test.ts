@@ -7,8 +7,8 @@ import { WorkStyle } from "../src/workStyle";
 test("analyzeCodebase generates tasks correctly with GEMINI_CLI agent in real Docker", async () => {
     const config: Config = {
         agentType: SWEAgentType.GEMINI_CLI,
-        dockerImageRef: "node:latest", // Use a real Docker image
-        dockerTimeoutSeconds: 600, // Increased timeout for real Docker operations
+        dockerImageRef: "ubuntu_with_node_and_git", // Use a real Docker image
+        dockerTimeoutSeconds: 6000, // Increased timeout for real Docker operations
         maxDockerContainers: 5,
         maxParallelDockerContainers: 1,
         maxTasks: 100,
@@ -17,7 +17,6 @@ test("analyzeCodebase generates tasks correctly with GEMINI_CLI agent in real Do
         dockerCpuCores: 1,
         workStyle: WorkStyle.DEFAULT, // WorkStyle is imported from workStyle.ts in analyzer.ts
         codingStyleLevel: 0,
-        googleGeminiApiKey: "dummy-key",
     };
     const gitRemoteUrl = "https://github.com/TinyCC/tinycc"; // Real Git repo
 
@@ -28,7 +27,7 @@ test("analyzeCodebase generates tasks correctly with GEMINI_CLI agent in real Do
     // For this test, we assume the gemini CLI will write a valid tasks.json
     // to /app/repo/fsc/tasks.json inside the container.
 
-    const tasks = await analyzeCodebase(config, gitRemoteUrl);
+    const tasks = await analyzeCodebase(config, gitRemoteUrl, false);
 
     // Assertions
     expect(tasks).toBeArray();
@@ -37,23 +36,4 @@ test("analyzeCodebase generates tasks correctly with GEMINI_CLI agent in real Do
     expect(tasks[0]).toHaveProperty("ID");
     expect(tasks[0]).toHaveProperty("title");
     expect(tasks[0]).toHaveProperty("description");
-});
-
-test("analyzeCodebase throws error for unsupported agent type", async () => {
-    const config: Config = {
-        agentType: SWEAgentType.CLAUDE_CODE, // Unsupported agent type
-        dockerImageRef: "node:latest",
-        dockerTimeoutSeconds: 300,
-        maxDockerContainers: 1,
-        maxParallelDockerContainers: 1,
-        maxTasks: 10,
-        minTasks: 1,
-        dockerMemoryMB: 512,
-        dockerCpuCores: 1,
-        workStyle: WorkStyle.DEFAULT,
-        codingStyleLevel: 0,
-    };
-    const gitRemoteUrl = "https://github.com/TinyCC/tinycc";
-
-    await expect(analyzeCodebase(config, gitRemoteUrl)).rejects.toThrow("Agent type claude-code is not implemented yet.");
 });

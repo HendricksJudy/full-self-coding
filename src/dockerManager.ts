@@ -104,7 +104,6 @@ export class DockerManager {
 
       // Run the commands in Docker
       const result = await dockerInstance.runCommands(
-        containerName,
         [task.description], // Assuming task.description is the command to run
         this.options.maxTimeoutSeconds
       );
@@ -125,7 +124,7 @@ export class DockerManager {
     } finally {
       // Ensure container is shut down
       if (containerName) {
-        await dockerInstance.shutdownContainer(containerName);
+        await dockerInstance.shutdownContainer();
       }
       // Remove the task from running tasks
       this.runningTasks.delete(task.ID);

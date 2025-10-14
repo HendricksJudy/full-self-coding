@@ -28,10 +28,12 @@ Now your task is to analyze the whole codebase and extract tasks that need to be
 Here are the rules:
 1. DO NOT DO ANY CODE CHANGES OR MODIFICATIONS.
 2. After generating the tasks, please make sure that the number of tasks is between ${config.minTasks ?? 1} and ${config.maxTasks ?? 10}.
-3. After output the tasks in JSON format, please make sure that the JSON is valid and can be parsed by TypeScript. Then create a folder "./fsc" and save the JSON file in it "./fsc/task.json".
-4. When creating the task, please make sure that the description is clear, instruction and actionable. Make sure that the description is specific and can be followed by a human, providing clear instructions on what needs to be done.  
+3. After output the tasks in JSON format, please make sure that the JSON is valid and can be parsed by TypeScript. Then create a folder "./fsc" and save the JSON file in it "/app/repo/fsc/tasks.json".
+4. When creating the task, please make sure that the description is rich, instruction and actionable. Make sure that the description is specific and can be followed by a human, providing clear instructions on what needs to be done. Also please provide as many tasks as possible. Your supervisor will make the final decision on which tasks to include. 
+5. The final output should be a JSON array of tasks. Even if there is only one task, it should be wrapped in an array.
+6. After JSON task array output, please double check the JSON format and syntax, and make sure that it can be parsed by TypeScript.
 
-Below is the structure of the task:
+Below is the structure of a single task:
 
 interface Task {
     /**
@@ -70,6 +72,8 @@ interface Task {
      */
     ID: string;
 }
+
+And you need to return a list of tasks that follow the above structure.
 
 `;
 

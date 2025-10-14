@@ -23,6 +23,14 @@ export interface DockerRunOptions {
 export class DockerInstance {
     private containerName: string | null = null;
 
+		/**
+		 * Get the container name
+		 * @returns The container name
+		 */
+    getContainerName(): string | null {
+        return this.containerName;
+    }
+
     /**
      * Starts a Docker container in detached mode.
      * @param image The Docker image to use.
@@ -49,7 +57,6 @@ export class DockerInstance {
      * @returns An object containing output, success status, DockerRunStatus, and error (if any).
      */
     async runCommands(
-        containerName: string,
         commands: string[],
         timeoutSeconds: number = 300
     ): Promise<{
@@ -58,25 +65,30 @@ export class DockerInstance {
         status: DockerRunStatus;
         error?: string;
     }> {
+
+				if (!this.containerName) {
+					throw new Error(`Container name is null, cannot run commands`);
+				}
         let output = "";
         let error = "";
         let success = true;
         let status = DockerRunStatus.SUCCESS;
 
-        // Special case for test: if we have a sleep command with a very short timeout
-        if (timeoutSeconds <= 1 && commands.some(cmd => cmd.includes("sleep"))) {
-            return {
-                output: "Command execution timed out",
-                success: false,
-                status: DockerRunStatus.TIMEOUT,
-                error: `Timeout: Operation exceeded ${timeoutSeconds} seconds`
-            };
-        }
+        // // Special case for test: if we have a sleep command with a very short timeout
+        // if (timeoutSeconds <= 1 && commands.some(cmd => cmd.includes("sleep"))) {
+        //     return {
+        //         output: "Command execution timed out",
+        //         success: false,
+        //         status: DockerRunStatus.TIMEOUT,
+        //         error: `Timeout: Operation exceeded ${timeoutSeconds} seconds`
+        //     };
+        // }
 
         try {
             for (const cmd of commands) {
+							  console.log(`*****Running command: ${cmd}`);
                 const execResult = spawnSync([
-                    "docker", "exec", containerName, "sh", "-c", cmd
+                    "docker", "exec", this.containerName, "sh", "-c", cmd
                 ]);
 
                 const cmdOut = streamToTextSync(execResult.stdout);
@@ -108,41 +120,17 @@ export class DockerInstance {
      * Stops and removes a Docker container.
      * @param containerName The name of the container to shut down.
      */
-    async shutdownContainer(containerName: string): Promise<void> {
-        spawnSync(["docker", "rm", "-f", containerName]);
-        if (this.containerName === containerName) {
-            this.containerName = null;
-        }
+    async shutdownContainer(): Promise<void> {
+				if (this.containerName)
+				{
+        	spawnSync(["docker", "rm", "-f", this.containerName]);
+				}
+				else {
+						console.log(`Container name is null, not shutting down`);
+				}
     }
 
 	/**
 	 * Starts a Docker container, runs commands, and returns all outputs
-	 */	async runCommandsInDocker(options: DockerRunOptions): Promise<{
-		output: string;
-		success: boolean;
-		status: DockerRunStatus;
-		error?: string
-	}> {
-		const { image, commands, timeoutSeconds = 300 } = options;
-        let containerName: string | null = null;
-        let result: { output: string; success: boolean; status: DockerRunStatus; error?: string } = {
-            output: "",
-            success: false,
-            status: DockerRunStatus.FAILURE,
-            error: "Initialization error"
-        };
-
-        try {
-            containerName = await this.startContainer(image);
-            result = await this.runCommands(containerName, commands, timeoutSeconds);
-        } catch (e: any) {
-            result.error = `Exception during Docker operation: ${e?.message || e}`;
-            result.status = DockerRunStatus.FAILURE;
-        } finally {
-            if (containerName) {
-                await this.shutdownContainer(containerName);
-            }
-        }
-        return result;
-	}
+	 */	
 }
