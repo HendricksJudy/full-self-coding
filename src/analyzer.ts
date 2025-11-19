@@ -6,6 +6,7 @@ import { getCodingStyle } from './codingStyle';
 import { getWorkStyleDescription, WorkStyle } from './workStyle';
 import { trimJSONObjectArray } from './utils/trimJSON';
 import { getClaudeCommand } from './SWEAgent/claudeCodeCommands';
+import { getGeminiCommand } from './SWEAgent/geminiCodeCommands';
 
 /**
  * Analyzes the codebase and generates a list of tasks to be executed
@@ -102,33 +103,20 @@ export async function analyzeCodebase(
 
 
 
-        if (config.agentType === SWEAgentType.GEMINI_CLI) {
-            // 5. Prepare API key export and gemini command
-            let geminiCommand = `gemini -p "all the task descriptions are located at /app/codeAnalyzerPrompt.txt, please read and execute" --yolo`;
-            let apiKeyExportCommand: string | undefined;
-
-            if (config.googleGeminiApiKey && config.googleGeminiAPIKeyExportNeeded) {
-                apiKeyExportCommand = `export GEMINI_API_KEY=${config.googleGeminiApiKey}`;
-            } else if (config.anthropicAPIKey && config.anthropicAPIKeyExportNeeded) {
-                apiKeyExportCommand = `export ANTHROPIC_API_KEY=${config.anthropicAPIKey}`;
-            } else if (config.openAICodexApiKey && config.openAICodexAPIKeyExportNeeded) {
-                apiKeyExportCommand = `export OPENAI_API_KEY=${config.openAICodexApiKey}`;
-            }
-
-            if (apiKeyExportCommand) {
-                geminiCommand = `${apiKeyExportCommand} && ${geminiCommand}`;
-            }
-
-            if (extraComandsBeforeAnalysis) {
-                allCommands.push(extraComandsBeforeAnalysis);
-            }
-            allCommands.push(geminiCommand);
-        }
-        else if (config.agentType === SWEAgentType.CLAUDE_CODE) {
-            allCommands.push(getClaudeCommand(config, true));
-        }
-        else if (config.agentType === SWEAgentType.CODEX) {
-            throw new Error("SWEAgentType.CODEX is not implemented yet for analyzeCodebase");
+        switch (config.agentType) {
+            case SWEAgentType.GEMINI_CLI:
+                if (extraComandsBeforeAnalysis) {
+                    allCommands.push(extraComandsBeforeAnalysis);
+                }
+                allCommands.push(getGeminiCommand(config, true));
+                break;
+            case SWEAgentType.CLAUDE_CODE:
+                allCommands.push(getClaudeCommand(config, true));
+                break;
+            case SWEAgentType.CODEX:
+                throw new Error("SWEAgentType.CODEX is not implemented yet for analyzeCodebase");
+            default:
+                throw new Error(`Unsupported agent type: ${config.agentType}`);
         }
 
         // console.log("Commands to run in Docker:");

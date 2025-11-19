@@ -1,6 +1,5 @@
 import { SWEAgentType } from "../config";
 import type { Config } from "../config";
-import { taskSolverPrompt } from "../prompts/taskSolverPrompt";
 import type {Task} from "../task";
 import {diffNodejsSourceCode} from "../prompts/diff_nodejs";
 import {getClaudeCommand} from "./claudeCodeCommands";
@@ -21,19 +20,26 @@ function environmentSetup(config: Config, gitRemoteUrl: string, task: Task, bIns
   ];
 
   if (bInstallAgent) {
-    if (config.agentType === SWEAgentType.GEMINI_CLI) {
-      setupCommands.push(
-        "npm install -g @google/gemini-cli",
-      );
-    }
-    else if (config.agentType === SWEAgentType.CLAUDE_CODE) {
-      setupCommands.push(
-        "npm install -g @anthropic-ai/claude-code",
-      );
-    }
-    else throw new Error(`Unsupported agent type: ${config.agentType}`);
+    switch (config.agentType) {
+      case SWEAgentType.GEMINI_CLI:
+        setupCommands.push(
+          "npm install -g @google/gemini-cli",
+        );
+        break;
+      case SWEAgentType.CLAUDE_CODE:
+        setupCommands.push(
+          "npm install -g @anthropic-ai/claude-code",
+        );
+        break;
+      case SWEAgentType.CODEX:
+        setupCommands.push(
+          "npm install -g @openai/codex",
+        );
+        break;
+      default:
+        throw new Error(`Unsupported agent type: ${config.agentType}`);
+   }
   }
-
   setupCommands.push("mkdir /app/repo/fsc");
   // setupCommands.push(
   //   ...addTaskSolverPromptIntoPath(
@@ -47,31 +53,30 @@ export function taskSolverCommands(
   task: Task,
   gitRemoteUrl: string,
 ): string[] {
-  if (agentType === SWEAgentType.GEMINI_CLI) {
-    let finalCommandsList = [];
-    finalCommandsList.push(...environmentSetup(config, gitRemoteUrl, task));
-    if (config.googleGeminiApiKey && config.googleGeminiAPIKeyExportNeeded) {
-      finalCommandsList.push(
-        `export GEMINI_API_KEY=${config.googleGeminiApiKey} && gemini -p "all the task descriptions are located at /app/taskSolverPrompt.txt, please read and execute" --yolo`,
-      );
-    }
-    else {
-      finalCommandsList.push(
-        `gemini -p "all the task descriptions are located at /app/taskSolverPrompt.txt, please read and execute" --yolo`,
-      );
-    }
-    return finalCommandsList;
+  if (agentType == SWEAgentType.CODEX){
+    throw new Error("CODEX is not supported yet for the task solver."); 
   }
-  else if (agentType === SWEAgentType.CLAUDE_CODE) {
-    let finalCommandList = [];
-    finalCommandList.push(...environmentSetup(config, gitRemoteUrl, task));
-    finalCommandList.push(
-      getClaudeCommand(config, false),
-    );
-    return finalCommandList;
+
+  let finalCommandsList = [] 
+  finalCommandsList.push(...environmentSetup(config , gitRemoteUrl , task));
+
+  switch (agentType) {
+    case SWEAgentType.GEMINI_CLI:
+      finalCommandsList.push(GeminiExecutionCommand(config));
+      return finalCommandsList;
+    case SWEAgentType.CLAUDE_CODE:
+      finalCommandsList.push(getClaudeCommand(config, false));
+      return finalCommandsList;
+    default:
+      break;
   }
-  else if (agentType === SWEAgentType.CODEX) {
-    throw new Error("CODEX is not supported yet for the task solver.");
-  }
+
   throw new Error(`Unsupported agent type: ${agentType}`);
+}
+
+function GeminiExecutionCommand(config: Config): string{
+  if (config.googleGeminiApiKey && config.googleGeminiAPIKeyExportNeeded) {
+    return `export GEMINI_API_KEY=${config.googleGeminiApiKey} && gemini -p "all the task descriptions are located at /app/taskSolverPrompt.txt, please read and execute" --yolo`;
+  }
+  return `gemini -p "all the task descriptions are located at /app/taskSolverPrompt.txt, please read and execute" --yolo`;
 }
