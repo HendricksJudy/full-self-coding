@@ -53,6 +53,7 @@ export interface Config {
      */
     openAICodexApiKey?: string;
     openAICodexAPIKeyExportNeeded?: boolean;
+    openAICodexAPIBaseUrl?: string;
 
 
     /**
