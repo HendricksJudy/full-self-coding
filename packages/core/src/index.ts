@@ -1,19 +1,19 @@
 // Core functionality exports for the full-self-coding library
 
-// Main engines
+// Main engines (original FSC)
 export { default as analyzeCodebase } from './analyzer';
 export { TaskSolver } from './taskSolver';
 export { TaskSolverManager } from './taskSolverManager';
 export { CodeCommitter } from './codeCommitter';
 export { DockerInstance } from './dockerInstance';
 
-// Configuration
+// Configuration (original FSC)
 export { createConfig, type Config } from './config';
 export { readConfigWithEnv } from './configReader';
 
-// Types and interfaces
+// Types and interfaces (original FSC)
 export type { Task } from './task';
-export type { CodingStyle } from './codingStyle';
+export { getCodingStyle } from './codingStyle';
 export type { WorkStyle } from './workStyle';
 
 // Utilities
@@ -21,7 +21,7 @@ export * from './utils/getDateAndTime';
 export * from './utils/trimJSON';
 export * from './utils/git';
 
-// Prompts
+// Prompts (original FSC)
 export * from './prompts/analyzerPrompt';
 export * from './prompts/taskSolverPrompt';
 export * from './prompts/codingStylePrompt';
@@ -33,3 +33,44 @@ export * from './SWEAgent/codexCommands';
 export * from './SWEAgent/cursorCommands';
 export * from './SWEAgent/geminiCodeCommands';
 export * from './SWEAgent/SWEAgentTaskSolverCommands';
+
+// ====================================================================
+// HCI Research Toolchain
+// ====================================================================
+
+// HCI Pipeline
+export { PipelineOrchestrator } from './pipelineOrchestrator';
+export { DAG } from './dag';
+export { WorkspaceManager } from './workspace';
+export { InputAnalyzer, type InputDetectionResult } from './inputAnalyzer';
+
+// HCI Configuration
+export { createHCIConfig, PipelineMode, InputType, type HCIConfig } from './hciConfig';
+
+// HCI Data Models
+export { PhaseType, PhaseStatus, type PhaseNode, type PhaseResult } from './phase';
+export { ArtifactType, ArtifactFormat, type Artifact, type ArtifactManifest } from './artifact';
+export type { PipelineState } from './pipelineState';
+
+// Persona Engine
+export { PersonaEngine } from './persona';
+export type {
+  PersonaProfile,
+  PersonaContext,
+  PersonaExperience,
+  ExperienceEpisode,
+  ParticipationResponse,
+  StudyResponse,
+  ParticipantRequirements,
+  PersonaSlot,
+} from './persona';
+export { getEpisodeCount, getDepthMultiplier } from './persona';
+
+// Data Profiler (thin loader — AI agents do the real data science)
+export { DataProfiler, type DataSnapshot } from './dataProfiler';
+export { KNOWN_QUESTIONNAIRES } from './dataProfiler';
+export type { QuestionnaireSignature } from './dataProfiler';
+
+// HCI Prompts
+export { PromptRouter } from './prompts/hci/promptRouter';
+export { pipelinePlanPrompt, sectionPlanPrompt } from './prompts/hci/planPrompt';
