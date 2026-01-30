@@ -6,6 +6,8 @@
   "anthropicAPIKeyExportNeeded": false,
   "anthropicAPIBaseUrl": "https://api.anthropic.com",
   "openAICodexApiKey": "your-openai-api-key",
+  "openAICodexAPIKeyExportNeeded": true,
+  "openAICodexAPIBaseUrl": "https://api.openai.com",
   "maxDockerContainers": 5,
   "maxParallelDockerContainers": 2,
   "dockerImageRef": "ubuntu:22.04",

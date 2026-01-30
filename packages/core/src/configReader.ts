@@ -203,6 +203,7 @@ export class ConfigReader {
         this.validateStringField(validatedConfig, 'anthropicAPIKey', true);
         this.validateStringField(validatedConfig, 'anthropicAPIBaseUrl', false);
         this.validateStringField(validatedConfig, 'openAICodexApiKey', true);
+        this.validateStringField(validatedConfig, 'openAICodexAPIBaseUrl', false);
         this.validateStringField(validatedConfig, 'customizedWorkStyle', false);
         this.validateStringField(validatedConfig, 'customizedCodingStyle', false);
 
@@ -348,6 +349,7 @@ export class ConfigReader {
             'FSC_ANTHROPIC_API_KEY': 'anthropicAPIKey',
             'FSC_ANTHROPIC_API_BASE_URL': 'anthropicAPIBaseUrl',
             'FSC_OPENAI_CODEX_API_KEY': 'openAICodexApiKey',
+            'FSC_OPENAI_CODEX_API_BASE_URL': 'openAICodexAPIBaseUrl',
             'FSC_MAX_DOCKER_CONTAINERS': 'maxDockerContainers',
             'FSC_MAX_PARALLEL_DOCKER_CONTAINERS': 'maxParallelDockerContainers',
             'FSC_DOCKER_IMAGE_REF': 'dockerImageRef',

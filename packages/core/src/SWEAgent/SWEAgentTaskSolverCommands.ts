@@ -3,6 +3,7 @@ import type { Config } from "../config";
 import type {Task} from "../task";
 import {diffNodejsSourceCode} from "../prompts/diff_nodejs";
 import {getClaudeCommand} from "./claudeCodeCommands";
+import {getCodexCommand} from "./codexCommands";
 import { CursorInstallationWrapper } from "./cursorCommands";
 
 const diffjsPrompt = diffNodejsSourceCode;
@@ -71,7 +72,7 @@ export function taskSolverCommands(
       finalCommandsList.push(getClaudeCommand(config, false));
       return finalCommandsList;
     case SWEAgentType.CODEX:
-      finalCommandsList.push(CodexExecutionCommand(config));
+      finalCommandsList.push(getCodexCommand(config, false));
       return finalCommandsList;
     case SWEAgentType.CURSOR:
       finalCommandsList.push(CursorExecutionCommand(config));
@@ -88,13 +89,6 @@ function GeminiExecutionCommand(config: Config): string{
     return `export GEMINI_API_KEY=${config.googleGeminiApiKey} && gemini -p "all the task descriptions are located at /app/taskSolverPrompt.txt, please read and execute" --yolo`;
   }
   return `gemini -p "all the task descriptions are located at /app/taskSolverPrompt.txt, please read and execute" --yolo`;
-}
-
-function CodexExecutionCommand(config: Config): string{
-  if (config.openAICodexApiKey && config.openAICodexAPIKeyExportNeeded) {
-    return `export OPENAI_API_KEY=${config.openAICodexApiKey} && codex exec --sandbox danger-full-access "all the task descriptions are located at /app/taskSolverPrompt.txt, please read and execute"`;
-  }
-  return `codex exec --sandbox danger-full-access "all the task descriptions are located at /app/taskSolverPrompt.txt, please read and execute"`;
 }
 
 function CursorExecutionCommand(config: Config): string{
