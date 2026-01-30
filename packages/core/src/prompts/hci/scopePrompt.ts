@@ -49,52 +49,100 @@ Write a JSON file to /app/output/research_plan.json with:
 }
 
 /**
- * Prompt for data profiling (Mode B, step 1).
+ * Prompt for Mode B data profiling + study reconstruction + analysis planning.
+ *
+ * This is a FULL AUTONOMOUS DATA SCIENCE prompt. The AI agent receives the raw
+ * data file(s) and must independently:
+ *   1. Understand the data
+ *   2. Reverse-engineer the study design
+ *   3. Plan and execute the complete statistical analysis
+ *   4. Produce publication-ready results
+ *
+ * The AI has Python/R available in the container to run any analysis code.
  */
 export function dataProfilePrompt(config: HCIConfig): string {
   return `
-You are a data scientist specializing in HCI research data.
-You have been given a dataset with NO context about what study produced it.
+You are an expert data scientist and HCI research methodologist.
+You have been given a dataset with ZERO context — no description,
+no codebook, no explanation. Your job is to do EVERYTHING autonomously.
+
+You have Python 3 with pandas, numpy, scipy, statsmodels, matplotlib,
+seaborn, and pingouin available. Write and run scripts as needed.
 
 ## Input
-Read the data file(s) from /app/input/.
+The raw data file(s) are in /app/input/.
+Read them. You must figure out everything yourself.
 
-## Your Task
+## Phase 1: Understand the Data
 
-1. **File Analysis**
-   - Identify file format, encoding, delimiter
-   - Count rows and columns
+Write and execute a Python script that:
 
-2. **Column Profiling**
-   For each column, determine:
-   - Data type (numeric, categorical, ordinal, text, timestamp, ID, boolean)
-   - Basic statistics (mean/median/std for numeric; value counts for categorical)
-   - Missing value count and percentage
-   - Inferred role: participant_id, condition/IV, dependent_variable, covariate, timestamp, unknown
+1. Loads the data (detect format: CSV, TSV, JSON, etc.)
+2. Prints shape, column names, dtypes
+3. For each column:
+   - Infer semantic type (participant ID, condition/IV, DV, ordinal/Likert, timestamp, covariate, free text)
+   - Compute: unique count, missing count, distribution summary
+   - For numeric: mean, sd, median, min, max, skewness, kurtosis
+   - For categorical: value counts, mode, balance
+4. Run Shapiro-Wilk normality test on each numeric DV
+5. Check for:
+   - Known questionnaires (SUS = 10 items 1-5, NASA-TLX = 6 subscales 0-100,
+     UEQ = 26 items -3 to 3, PSSUQ = 16 items 1-7, AttrakDiff = 28 items)
+   - Repeated measures (same participant ID, multiple rows)
+   - Factorial structure (multiple IVs crossed)
+6. Compute composite scores for any detected questionnaires using standard scoring
 
-3. **Pattern Detection**
-   - Is there a participant ID column? How many unique participants?
-   - Is this repeated measures (same participant, multiple rows)?
-   - Are there condition/group columns? What are the levels?
-   - Does this look like survey data? What scale (Likert 5/7)?
-   - Check for known questionnaires: SUS (10 items), NASA-TLX (6 items), UEQ (26 items), etc.
+Save the profile to /app/output/data_profile.json
 
-4. **Data Quality**
-   - Missing values summary
-   - Duplicate rows
-   - Potential outliers (>3 SD for numeric columns)
+## Phase 2: Reconstruct the Study Design
 
-5. **Normality Testing**
-   For each numeric column, test normality (Shapiro-Wilk if n<5000, else D'Agostino-Pearson).
-   Report: test statistic, p-value, skewness, kurtosis.
+Based on your data profile, determine:
 
-## Output
-Write /app/output/data_profile.json with the full DataProfile object.
+1. **Design type**: between-subjects / within-subjects / mixed / correlational / longitudinal
+2. **Variables**: clearly label each column as IV, DV, covariate, or ID
+3. **Factors**: name, levels, between vs. within
+4. **Research questions**: infer 1-3 RQs from the IV→DV relationships
+5. **Sample**: total N, N per condition, balance
+
+For EVERY inference, document your reasoning. This will go into the paper.
+
+Save to /app/output/reconstructed_study.json
+
+## Phase 3: Plan the Analysis
+
+Based on the study design and data characteristics, create a full analysis plan.
+Make ALL decisions yourself. Never leave anything for a human to decide.
+
+Decision flowchart you MUST follow:
+- Normal data (Shapiro p > .05) + 2 groups → t-test (independent or paired)
+- Normal + 3+ groups → ANOVA (one-way, factorial, repeated measures, or mixed)
+- Not normal + 2 groups → Mann-Whitney U or Wilcoxon signed-rank
+- Not normal + 3+ groups → Kruskal-Wallis or Friedman
+- Correlational → Pearson (normal) or Spearman (non-normal)
+- Always: report effect sizes (Cohen's d, eta-squared, rank-biserial)
+- Multiple comparisons → Holm-Bonferroni correction
+- Check ANOVA assumptions: Levene's test, Mauchly's sphericity
+
+Save to /app/output/analysis_plan.json with:
+{
+  "steps": [{ "id": "string", "title": "string", "method": "string", "variables": {}, "rationale": "string" }],
+  "decisions": [{ "question": "string", "decision": "string", "reasoning": "string" }],
+  "framework": "frequentist",
+  "alpha": 0.05
+}
+
+## Output Summary
+You MUST produce these files in /app/output/:
+1. data_profile.json — complete data characterization
+2. reconstructed_study.json — inferred study design
+3. analysis_plan.json — full statistical plan with rationale
+4. profile_script.py — the Python script you wrote (for reproducibility)
 `.trim();
 }
 
 /**
- * Prompt for study reconstruction (Mode B, step 2).
+ * Prompt for study reconstruction.
+ * Used when data profiling and reconstruction are separate DAG nodes.
  */
 export function studyReconstructPrompt(config: HCIConfig): string {
   return `
@@ -106,6 +154,9 @@ Your task is to reverse-engineer the study design.
 Read /app/input/data_profile.json (the output of the data profiling step).
 
 ## Your Task
+
+You have Python 3 available. Write and run scripts if you need to
+explore the data further.
 
 1. **Study Design Type**
    Based on the data structure, determine:
@@ -128,7 +179,7 @@ Read /app/input/data_profile.json (the output of the data profiling step).
 
 4. **Known Questionnaire Scoring**
    - For any detected questionnaires (SUS, NASA-TLX, etc.):
-     confirm identification, describe scoring method
+     confirm identification, write and run scoring code
 
 5. **Reasoning**
    - For every inference, explain WHY you concluded this

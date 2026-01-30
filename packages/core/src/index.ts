@@ -66,18 +66,10 @@ export type {
 } from './persona';
 export { getEpisodeCount, getDepthMultiplier } from './persona';
 
-// Data Profiler
-export { DataProfiler } from './dataProfiler';
+// Data Profiler (thin loader — AI agents do the real data science)
+export { DataProfiler, type DataSnapshot } from './dataProfiler';
 export { KNOWN_QUESTIONNAIRES } from './dataProfiler';
-export type {
-  DataProfile,
-  ColumnProfile,
-  KnownQuestionnaireMatch,
-  ReconstructedStudy,
-  AnalysisPlan,
-  AnalysisStep,
-  AnalysisDecision,
-} from './dataProfiler';
+export type { QuestionnaireSignature } from './dataProfiler';
 
 // HCI Prompts
 export { PromptRouter } from './prompts/hci/promptRouter';

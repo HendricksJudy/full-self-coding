@@ -506,12 +506,17 @@ export class PipelineOrchestrator {
     // Install base tools
     commands.push('apt-get update -qq && apt-get install -y -qq curl python3 python3-pip > /dev/null 2>&1');
 
-    // Install Python scientific stack for analysis nodes
-    if (node.type === PhaseType.ANALYZE) {
-      commands.push(
-        'pip3 install -q pandas numpy scipy statsmodels matplotlib seaborn 2>/dev/null'
-      );
-    }
+    // Install Python scientific stack for ALL phases that may need data science.
+    // The AI agents are autonomous data scientists — they write and execute
+    // Python scripts for analysis, visualization, data profiling, etc.
+    // Every phase might need Python (e.g., SCOPE/data-profile runs pandas,
+    // ANALYZE runs scipy, COLLECT/aggregate processes JSON), so install everywhere.
+    commands.push(
+      'pip3 install -q pandas numpy scipy statsmodels matplotlib seaborn pingouin 2>/dev/null'
+    );
+
+    // Create /app/scripts/ for AI-written code
+    commands.push('mkdir -p /app/scripts /app/output/figures');
 
     // Install the AI agent
     switch (this.config.agentType) {
@@ -526,25 +531,32 @@ export class PipelineOrchestrator {
         break;
     }
 
-    // Run the AI agent with the prompt
+    // Run the AI agent with the prompt.
+    // The agent reads /app/prompt.txt, examines /app/input/,
+    // writes and executes Python scripts, and writes results to /app/output/.
     commands.push(this.buildAgentCommand(node));
 
     return commands;
   }
 
   private buildAgentCommand(node: PhaseNode): string {
-    // Build the agent-specific command to process /app/prompt.txt
-    // and write results to /app/output/
+    // The AI agent operates in /app/. It can:
+    //   - Read prompt.txt (its instructions)
+    //   - Read input/ (upstream artifacts and data files)
+    //   - Write and execute Python scripts (for data science)
+    //   - Write results to output/
     const apiKeyExport = this.getAPIKeyExport();
     const baseCmd = `cd /app && ${apiKeyExport}`;
 
     switch (this.config.agentType) {
       case SWEAgentType.CLAUDE_CODE:
-        return `${baseCmd} cat prompt.txt | claude --print 2>/dev/null > /app/output/result.json`;
+        // Claude Code gets the prompt and runs autonomously in /app/
+        // It can use tools: write files, run Python, read data, etc.
+        return `${baseCmd} claude --print "$(cat prompt.txt)" 2>/dev/null`;
       case SWEAgentType.GEMINI_CLI:
-        return `${baseCmd} cat prompt.txt | gemini 2>/dev/null > /app/output/result.json`;
+        return `${baseCmd} gemini "$(cat prompt.txt)" 2>/dev/null`;
       default:
-        return `${baseCmd} cat prompt.txt | claude --print 2>/dev/null > /app/output/result.json`;
+        return `${baseCmd} claude --print "$(cat prompt.txt)" 2>/dev/null`;
     }
   }
 
