@@ -136,6 +136,17 @@ export class DAG {
   }
 
   /**
+   * Add new nodes to the DAG at runtime.
+   * Used after the PLAN phase completes to populate the real pipeline
+   * based on the AI agent's pipeline plan.
+   */
+  addNodes(newNodes: PhaseNode[]): void {
+    for (const node of newNodes) {
+      this.nodes.set(node.id, node);
+    }
+  }
+
+  /**
    * Expand a node by replacing it with child subtasks.
    * The original node becomes a virtual parent: it is COMPLETED
    * when all children are COMPLETED.

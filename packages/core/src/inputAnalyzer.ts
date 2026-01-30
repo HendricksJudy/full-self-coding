@@ -16,13 +16,17 @@ const DATA_EXTENSIONS = new Set(['csv', 'tsv', 'json', 'jsonl', 'xlsx', 'parquet
 const TEXT_EXTENSIONS = new Set(['txt', 'md', 'text']);
 
 /**
- * Analyzes user input to determine what was provided and which
- * pipeline mode to use. Replaces the original FSC analyzer.ts.
+ * Analyzes user input to determine file type and pipeline mode.
+ *
+ * This is INFRASTRUCTURE-LEVEL routing only — it checks file extensions
+ * and directory contents to decide Mode A vs Mode B. All intelligent
+ * classification (topic vs RQ, data characterization, pipeline design)
+ * is delegated to the AI PLAN phase.
  *
  * Detection logic:
  *   - Data files (csv, json, xlsx...) → Mode B (real data)
  *   - Directory of data files         → Mode B
- *   - Text file                       → Classify as topic or RQ → Mode A
+ *   - Text file / unknown             → Mode A (AI classifies in PLAN phase)
  */
 export class InputAnalyzer {
   /**
@@ -164,77 +168,22 @@ export class InputAnalyzer {
   }
 
   /**
-   * Detect a text file. Classify as topic or research question
-   * based on heuristics.
+   * Detect a text file. Returns provisional classification — the AI PLAN
+   * phase will perform the actual semantic understanding and classification.
    */
   private static async detectTextFile(filePath: string): Promise<InputDetectionResult> {
     const content = await fs.promises.readFile(filePath, 'utf8');
     const trimmed = content.trim();
-    const classification = InputAnalyzer.classifyText(trimmed);
 
     return {
-      inputType: classification.type,
+      inputType: InputType.TOPIC, // Provisional — AI PLAN phase decides actual type
       mode: PipelineMode.SIMULATED,
       meta: {
         content: trimmed,
-        ...classification,
+        wordCount: trimmed.split(/\s+/).length,
+        fileName: path.basename(filePath),
+        provisional: true,
       },
-    };
-  }
-
-  /**
-   * Classify text content as a topic or a research question.
-   *
-   * Heuristics:
-   * - Contains "?" → likely a research question
-   * - Contains RQ markers ("RQ1", "H1", "hypothesis") → research question
-   * - Starts with "How", "What", "Does", "Is", "Can", "Do" → research question
-   * - Short (< 20 words), no question markers → topic
-   * - Long with structured content → research question
-   */
-  static classifyText(text: string): { type: InputType; confidence: number; reasoning: string } {
-    const lower = text.toLowerCase();
-    const wordCount = text.split(/\s+/).length;
-
-    // Strong RQ signals
-    if (text.includes('?')) {
-      return {
-        type: InputType.RESEARCH_QUESTION,
-        confidence: 0.9,
-        reasoning: 'Contains question mark — likely a research question.',
-      };
-    }
-
-    if (/\b(RQ\d|H\d|hypothesis|research question)/i.test(text)) {
-      return {
-        type: InputType.RESEARCH_QUESTION,
-        confidence: 0.95,
-        reasoning: 'Contains explicit RQ/hypothesis markers.',
-      };
-    }
-
-    if (/^(how|what|does|is|can|do|why|whether|which)\b/i.test(text.trim())) {
-      return {
-        type: InputType.RESEARCH_QUESTION,
-        confidence: 0.8,
-        reasoning: 'Starts with a question word.',
-      };
-    }
-
-    // Long structured text → likely a detailed RQ or proposal
-    if (wordCount > 50) {
-      return {
-        type: InputType.RESEARCH_QUESTION,
-        confidence: 0.6,
-        reasoning: 'Long text — treating as detailed research question/proposal.',
-      };
-    }
-
-    // Short text without question markers → topic
-    return {
-      type: InputType.TOPIC,
-      confidence: 0.7,
-      reasoning: 'Short text without question markers — treating as topic.',
     };
   }
 }

@@ -16,9 +16,18 @@ import { PromptRouter } from './prompts/hci/promptRouter';
  * Top-level pipeline execution controller.
  * Replaces TaskSolverManager with a DAG-based multi-phase engine.
  *
- * Drives the DAG to completion by repeatedly finding ready nodes,
- * executing them in parallel (up to concurrency limit), and persisting
- * state after each completion for resumability.
+ * The pipeline is fully AI-driven:
+ *   1. A PLAN node runs first — the AI reads the input and designs
+ *      the pipeline DAG (which phases, what order, what dependencies).
+ *   2. The orchestrator builds the DAG from the AI's plan.
+ *   3. Phases execute according to the DAG schedule.
+ *   4. Dynamic expansion happens at two points:
+ *      - COLLECT expands into persona subtasks (Mode A)
+ *      - SYNTHESIZE expands into paper sections chosen by the
+ *        synthesize/plan node
+ *
+ * Infrastructure code handles scheduling, isolation, and data flow.
+ * AI agents make ALL intelligent decisions.
  */
 export class PipelineOrchestrator {
   private dag!: DAG;
@@ -26,6 +35,8 @@ export class PipelineOrchestrator {
   private config: HCIConfig;
   private activeExecutions: Map<string, Promise<PhaseResult>> = new Map();
   private mode!: PipelineMode;
+  private planExpanded = false;
+  private synthesisPlanExpanded = false;
 
   constructor(config: HCIConfig) {
     this.config = config;
@@ -35,7 +46,7 @@ export class PipelineOrchestrator {
    * Main entry point. Runs the full pipeline from input to final artifacts.
    */
   async run(inputPath: string): Promise<PipelineState> {
-    // 1. Detect input type
+    // 1. Detect input type (infrastructure-level: file extensions only)
     console.log(`[Pipeline] Analyzing input: ${inputPath}`);
     const detection = await InputAnalyzer.detect(inputPath);
     this.mode = detection.mode;
@@ -48,7 +59,7 @@ export class PipelineOrchestrator {
     await this.workspace.importInput(inputPath);
     console.log(`[Pipeline] Workspace created: ${this.workspace.getRootPath()}`);
 
-    // 3. Write input metadata
+    // 3. Write input metadata (AI PLAN phase reads this)
     await this.workspace.writeArtifact(
       {
         id: 'input/meta',
@@ -60,8 +71,11 @@ export class PipelineOrchestrator {
       JSON.stringify({ ...detection, detectedAt: Date.now() }, null, 2),
     );
 
-    // 4. Build initial DAG
-    const nodes = this.buildInitialDAG(detection);
+    // 4. Build initial DAG with just the PLAN node.
+    //    The AI agent reads the input and outputs a pipeline_plan.json
+    //    describing the full phase structure. The orchestrator then
+    //    populates the DAG from that plan.
+    const nodes = this.buildInitialDAG();
     this.dag = new DAG(nodes);
     const errors = this.dag.validate();
     if (errors.length > 0) {
@@ -112,6 +126,18 @@ export class PipelineOrchestrator {
     }
 
     this.dag = new DAG(state.nodes);
+
+    // Detect which expansions already happened
+    const planNode = this.dag.getNode('plan');
+    if (planNode && planNode.status === PhaseStatus.COMPLETED) {
+      this.planExpanded = true;
+    }
+    const synthPlanNode = this.dag.getNode('synthesize/plan');
+    const synthNode = this.dag.getNode('synthesize');
+    if (synthPlanNode?.status === PhaseStatus.COMPLETED && synthNode?.children) {
+      this.synthesisPlanExpanded = true;
+    }
+
     console.log(`[Pipeline] Resumed project: ${projectId}`);
     const summary = this.dag.getSummary();
     console.log(`[Pipeline] Status: ${summary.completed} done, ${summary.pending} pending, ${summary.failed} failed`);
@@ -276,148 +302,22 @@ export class PipelineOrchestrator {
 
   // --- DAG construction ---
 
-  private buildInitialDAG(detection: InputDetectionResult): PhaseNode[] {
-    if (detection.mode === PipelineMode.REAL_DATA) {
-      return this.buildModeBDAG();
-    }
-    return this.buildModeADAG();
-  }
-
   /**
-   * Mode A: Full 6-phase pipeline.
-   * SCOPE → DESIGN → COLLECT → ANALYZE → SYNTHESIZE → REVIEW
+   * Build the initial DAG with just a PLAN node.
+   * The AI agent reads the input and designs the full pipeline.
+   * After PLAN completes, expandPlanPhase() populates the real DAG.
    */
-  private buildModeADAG(): PhaseNode[] {
+  private buildInitialDAG(): PhaseNode[] {
     return [
       {
-        id: 'scope',
-        type: PhaseType.SCOPE,
-        title: 'Research scoping and literature review',
-        description: 'Analyze the input topic/RQ, conduct literature review, identify gaps, formulate research plan.',
+        id: 'plan',
+        type: PhaseType.PLAN,
+        title: 'AI pipeline planning',
+        description: 'Read the input, classify it, and design the optimal research pipeline.',
         dependsOn: [],
         status: PhaseStatus.PENDING,
-        outputArtifacts: ['scope/research_plan'],
+        outputArtifacts: ['plan/pipeline_plan'],
         inputArtifacts: [],
-      },
-      {
-        id: 'design',
-        type: PhaseType.DESIGN,
-        title: 'Study design and protocol',
-        description: 'Design the experiment: variables, conditions, questionnaires, participant requirements, analysis pre-registration.',
-        dependsOn: ['scope'],
-        status: PhaseStatus.PENDING,
-        outputArtifacts: ['design/study_protocol', 'design/questionnaire', 'design/variables'],
-        inputArtifacts: ['scope/research_plan'],
-      },
-      {
-        id: 'collect',
-        type: PhaseType.COLLECT,
-        title: 'Data collection via simulated participants',
-        description: 'Generate personas and run simulated experiment. Will be expanded into persona subtasks when design completes.',
-        dependsOn: ['design'],
-        status: PhaseStatus.PENDING,
-        outputArtifacts: ['collect/raw_data'],
-        inputArtifacts: ['design/study_protocol', 'design/questionnaire'],
-      },
-      {
-        id: 'analyze',
-        type: PhaseType.ANALYZE,
-        title: 'Statistical analysis and visualization',
-        description: 'Run statistical analyses, generate visualizations, produce APA-formatted results.',
-        dependsOn: ['collect'],
-        status: PhaseStatus.PENDING,
-        outputArtifacts: ['analyze/results', 'analyze/results_apa'],
-        inputArtifacts: ['collect/raw_data', 'design/study_protocol'],
-      },
-      {
-        id: 'synthesize',
-        type: PhaseType.SYNTHESIZE,
-        title: 'Paper writing',
-        description: 'Write all paper sections. Will be expanded into parallel section tasks when analysis completes.',
-        dependsOn: ['analyze'],
-        status: PhaseStatus.PENDING,
-        outputArtifacts: ['synthesize/paper_draft'],
-        inputArtifacts: ['scope/research_plan', 'design/study_protocol', 'analyze/results', 'analyze/results_apa'],
-      },
-      {
-        id: 'review',
-        type: PhaseType.REVIEW,
-        title: 'Self-review and finalization',
-        description: 'Review paper for methodological soundness, logical consistency, formatting, and identify limitations.',
-        dependsOn: ['synthesize'],
-        status: PhaseStatus.PENDING,
-        outputArtifacts: ['review/review_report', 'review/final_paper'],
-        inputArtifacts: ['synthesize/paper_draft'],
-      },
-    ];
-  }
-
-  /**
-   * Mode B: Data-in pipeline.
-   * Data Profile → Study Reconstruct → Analysis Plan → ANALYZE → SYNTHESIZE → REVIEW
-   * COLLECT is skipped (user already provided data).
-   */
-  private buildModeBDAG(): PhaseNode[] {
-    return [
-      {
-        id: 'scope/data-profile',
-        type: PhaseType.SCOPE,
-        title: 'Profile input dataset',
-        description: 'Analyze data structure, column types, detect patterns, match known questionnaires.',
-        dependsOn: [],
-        status: PhaseStatus.PENDING,
-        outputArtifacts: ['scope/data_profile'],
-        inputArtifacts: [],
-      },
-      {
-        id: 'scope/study-reconstruct',
-        type: PhaseType.SCOPE,
-        title: 'Reconstruct study design from data',
-        description: 'Reverse-engineer the study design from data structure: identify variables, factors, design type.',
-        dependsOn: ['scope/data-profile'],
-        status: PhaseStatus.PENDING,
-        outputArtifacts: ['scope/reconstructed_study'],
-        inputArtifacts: ['scope/data_profile'],
-      },
-      {
-        id: 'design/analysis-plan',
-        type: PhaseType.DESIGN,
-        title: 'Generate analysis plan',
-        description: 'Create a complete statistical analysis plan based on the reconstructed study design and data profile.',
-        dependsOn: ['scope/study-reconstruct'],
-        status: PhaseStatus.PENDING,
-        outputArtifacts: ['design/analysis_plan'],
-        inputArtifacts: ['scope/data_profile', 'scope/reconstructed_study'],
-      },
-      {
-        id: 'analyze',
-        type: PhaseType.ANALYZE,
-        title: 'Statistical analysis and visualization',
-        description: 'Execute the analysis plan: run statistical tests, generate visualizations, produce APA-formatted results.',
-        dependsOn: ['design/analysis-plan'],
-        status: PhaseStatus.PENDING,
-        outputArtifacts: ['analyze/results', 'analyze/results_apa'],
-        inputArtifacts: ['design/analysis_plan', 'scope/data_profile', 'scope/reconstructed_study'],
-      },
-      {
-        id: 'synthesize',
-        type: PhaseType.SYNTHESIZE,
-        title: 'Paper writing',
-        description: 'Write all paper sections based on analysis results.',
-        dependsOn: ['analyze'],
-        status: PhaseStatus.PENDING,
-        outputArtifacts: ['synthesize/paper_draft'],
-        inputArtifacts: ['scope/reconstructed_study', 'design/analysis_plan', 'analyze/results', 'analyze/results_apa'],
-      },
-      {
-        id: 'review',
-        type: PhaseType.REVIEW,
-        title: 'Self-review and finalization',
-        description: 'Review paper for methodological soundness, logical consistency, formatting, and identify limitations.',
-        dependsOn: ['synthesize'],
-        status: PhaseStatus.PENDING,
-        outputArtifacts: ['review/review_report', 'review/final_paper'],
-        inputArtifacts: ['synthesize/paper_draft'],
       },
     ];
   }
@@ -430,24 +330,103 @@ export class PipelineOrchestrator {
     for (const node of allNodes) {
       if (node.status !== PhaseStatus.COMPLETED) continue;
 
-      // After DESIGN completes in Mode A → expand COLLECT with persona nodes
-      if (node.id === 'design' && this.mode === PipelineMode.SIMULATED) {
+      // After PLAN completes → build the real pipeline from AI output
+      if (node.id === 'plan' && !this.planExpanded) {
+        await this.expandPlanPhase();
+        this.planExpanded = true;
+      }
+
+      // After any DESIGN-type node completes in Mode A → expand COLLECT with persona nodes
+      if (node.type === PhaseType.DESIGN && this.mode === PipelineMode.SIMULATED) {
         const collectNode = this.dag.getNode('collect');
-        if (collectNode && collectNode.status === PhaseStatus.PENDING) {
-          await this.expandCollectPhase();
+        if (collectNode && collectNode.status === PhaseStatus.PENDING && !collectNode.children) {
+          // Verify all collect dependencies are met
+          const allDepsDone = collectNode.dependsOn.every((depId) => {
+            const dep = this.dag.getNode(depId);
+            return dep && (dep.status === PhaseStatus.COMPLETED || dep.status === PhaseStatus.SKIPPED);
+          });
+          if (allDepsDone) {
+            await this.expandCollectPhase();
+          }
         }
       }
 
-      // After ANALYZE completes → expand SYNTHESIZE with section nodes
-      if (node.id === 'analyze' || node.id === 'analyze/compile') {
+      // After synthesize/plan completes → expand SYNTHESIZE with AI-chosen sections
+      if (node.id === 'synthesize/plan' && !this.synthesisPlanExpanded) {
         const synthNode = this.dag.getNode('synthesize');
         if (synthNode && synthNode.status === PhaseStatus.PENDING) {
-          this.expandSynthesizePhase();
+          await this.expandSynthesizeSections();
+          this.synthesisPlanExpanded = true;
         }
       }
     }
   }
 
+  /**
+   * Read the AI's pipeline plan and populate the DAG with the real phases.
+   * The PLAN node output contains pipeline_plan.json with the full phase
+   * structure designed by the AI agent.
+   */
+  private async expandPlanPhase(): Promise<void> {
+    const outputDir = this.workspace.getOutputDir('plan');
+
+    let planJson: string;
+    try {
+      planJson = await fs.promises.readFile(
+        path.join(outputDir, 'pipeline_plan.json'), 'utf8',
+      );
+    } catch {
+      // Fallback: AI might have written to result.json
+      planJson = await fs.promises.readFile(
+        path.join(outputDir, 'result.json'), 'utf8',
+      );
+    }
+
+    const plan = JSON.parse(planJson);
+
+    // Update mode from AI classification
+    if (plan.inputClassification) {
+      const aiMode = plan.inputClassification.mode === 'B'
+        ? PipelineMode.REAL_DATA
+        : PipelineMode.SIMULATED;
+      this.mode = aiMode;
+      console.log(
+        `[Pipeline] AI classified input as: ${plan.inputClassification.type} (Mode ${plan.inputClassification.mode})`,
+      );
+      if (plan.inputClassification.reasoning) {
+        console.log(`[Pipeline] Reasoning: ${plan.inputClassification.reasoning}`);
+      }
+    }
+
+    // Parse AI-designed nodes into PhaseNode objects
+    const validTypes = new Set(Object.values(PhaseType));
+    const newNodes: PhaseNode[] = (plan.nodes || []).map((n: any) => ({
+      id: n.id,
+      type: validTypes.has(n.type) ? (n.type as PhaseType) : PhaseType.SCOPE,
+      title: n.title || n.id,
+      description: n.description || '',
+      dependsOn: Array.isArray(n.dependsOn) ? n.dependsOn : [],
+      status: PhaseStatus.PENDING,
+      outputArtifacts: Array.isArray(n.outputArtifacts) ? n.outputArtifacts : [],
+      inputArtifacts: Array.isArray(n.inputArtifacts) ? n.inputArtifacts : [],
+    }));
+
+    // Add all AI-planned nodes to the DAG
+    this.dag.addNodes(newNodes);
+
+    // Validate the expanded DAG
+    const errors = this.dag.validate();
+    if (errors.length > 0) {
+      console.warn('[Pipeline] DAG validation warnings after plan expansion:', errors);
+    }
+
+    console.log(`[Pipeline] PLAN phase expanded DAG with ${newNodes.length} nodes`);
+  }
+
+  /**
+   * Expand the COLLECT phase with persona subtask nodes.
+   * Uses PersonaEngine to generate context → experience → participate chains.
+   */
   private async expandCollectPhase(): Promise<void> {
     const personaCount = this.config.simulatedParticipantCount || 30;
     console.log(`[Pipeline] Expanding COLLECT phase with ${personaCount} personas`);
@@ -459,40 +438,56 @@ export class PipelineOrchestrator {
     this.dag.expandNode('collect', personaNodes);
   }
 
-  private expandSynthesizePhase(): void {
-    const sections = [
-      'abstract', 'introduction', 'related_work',
-      'method', 'results', 'discussion', 'conclusion',
-    ];
+  /**
+   * Read the AI's section plan and expand SYNTHESIZE with paper sections.
+   * The synthesize/plan node output contains section_plan.json with
+   * the paper structure designed by the AI agent.
+   */
+  private async expandSynthesizeSections(): Promise<void> {
+    const outputDir = this.workspace.getOutputDir('synthesize/plan');
 
-    console.log('[Pipeline] Expanding SYNTHESIZE phase with paper sections');
+    let planJson: string;
+    try {
+      planJson = await fs.promises.readFile(
+        path.join(outputDir, 'section_plan.json'), 'utf8',
+      );
+    } catch {
+      planJson = await fs.promises.readFile(
+        path.join(outputDir, 'result.json'), 'utf8',
+      );
+    }
 
-    const sectionNodes: PhaseNode[] = sections.map((section) => ({
-      id: `synthesize/${section}`,
+    const plan = JSON.parse(planJson);
+    const sections: any[] = plan.sections || [];
+
+    console.log(`[Pipeline] Expanding SYNTHESIZE with ${sections.length} AI-planned sections`);
+
+    // Build section nodes from AI plan
+    const sectionNodes: PhaseNode[] = sections.map((s: any) => ({
+      id: `synthesize/${s.id}`,
       type: PhaseType.SYNTHESIZE,
-      title: `Write ${section.replace('_', ' ')} section`,
-      description: `Write the ${section.replace('_', ' ')} section of the paper.`,
-      dependsOn: [],
+      title: `Write: ${s.title || s.id}`,
+      description: s.description || `Write the ${s.title || s.id} section of the paper.`,
+      dependsOn: [], // All sections can be written in parallel
       status: PhaseStatus.PENDING,
-      outputArtifacts: [`synthesize/${section}`],
-      inputArtifacts: [
-        'scope/research_plan',
-        'design/study_protocol',
-        'analyze/results',
-        'analyze/results_apa',
-      ],
+      outputArtifacts: [`synthesize/${s.id}`],
+      inputArtifacts: Array.isArray(s.inputArtifacts) ? s.inputArtifacts : [],
     }));
 
-    // Compile node: waits for all sections then assembles the full paper
+    // Add compile node that waits for all sections
+    const compileDescription = plan.paperTitle
+      ? `Assemble all sections into a cohesive paper draft. Suggested title: "${plan.paperTitle}"`
+      : 'Assemble all sections into a cohesive paper draft.';
+
     sectionNodes.push({
       id: 'synthesize/compile',
       type: PhaseType.SYNTHESIZE,
       title: 'Compile full paper draft',
-      description: 'Assemble all sections into a cohesive paper draft.',
-      dependsOn: sections.map((s) => `synthesize/${s}`),
+      description: compileDescription,
+      dependsOn: sections.map((s: any) => `synthesize/${s.id}`),
       status: PhaseStatus.PENDING,
       outputArtifacts: ['synthesize/paper_draft'],
-      inputArtifacts: sections.map((s) => `synthesize/${s}`),
+      inputArtifacts: sections.map((s: any) => `synthesize/${s.id}`),
     });
 
     this.dag.expandNode('synthesize', sectionNodes);

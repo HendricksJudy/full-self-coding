@@ -42,7 +42,7 @@ export * from './SWEAgent/SWEAgentTaskSolverCommands';
 export { PipelineOrchestrator } from './pipelineOrchestrator';
 export { DAG } from './dag';
 export { WorkspaceManager } from './workspace';
-export { InputAnalyzer } from './inputAnalyzer';
+export { InputAnalyzer, type InputDetectionResult } from './inputAnalyzer';
 
 // HCI Configuration
 export { createHCIConfig, PipelineMode, InputType, type HCIConfig } from './hciConfig';
@@ -73,3 +73,4 @@ export type { QuestionnaireSignature } from './dataProfiler';
 
 // HCI Prompts
 export { PromptRouter } from './prompts/hci/promptRouter';
+export { pipelinePlanPrompt, sectionPlanPrompt } from './prompts/hci/planPrompt';

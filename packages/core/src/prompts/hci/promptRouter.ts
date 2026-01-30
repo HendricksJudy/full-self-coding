@@ -1,6 +1,7 @@
 import { type PhaseNode, PhaseType } from '../../phase';
 import type { HCIConfig } from '../../hciConfig';
 import { PipelineMode } from '../../hciConfig';
+import { pipelinePlanPrompt, sectionPlanPrompt } from './planPrompt';
 import { scopePrompt, dataProfilePrompt, studyReconstructPrompt } from './scopePrompt';
 import { designPrompt, analysisDesignPrompt } from './designPrompt';
 import { contextPrompt, experiencePrompt, participatePrompt, aggregatePrompt } from './collectPrompt';
@@ -15,9 +16,11 @@ export class PromptRouter {
   static getPrompt(node: PhaseNode, config: HCIConfig, mode: PipelineMode): string {
     // Handle sub-node IDs (e.g., "collect/persona-001/context")
     const parts = node.id.split('/');
-    const phaseRoot = parts[0];
 
     switch (node.type) {
+      case PhaseType.PLAN:
+        return pipelinePlanPrompt(config);
+
       case PhaseType.SCOPE:
         return PromptRouter.getScopePrompt(node, config, mode);
 
@@ -75,12 +78,17 @@ export class PromptRouter {
   }
 
   private static getSynthesizePrompt(node: PhaseNode, parts: string[], config: HCIConfig): string {
+    // Section planning is routed via synthesize/plan node ID
+    if (node.id === 'synthesize/plan') {
+      return sectionPlanPrompt(config);
+    }
     if (node.id === 'synthesize/compile') {
       return synthesizeCompilePrompt(config);
     }
     if (parts.length >= 2 && parts[0] === 'synthesize') {
       const section = parts.slice(1).join('/');
-      return synthesizeSectionPrompt(section, config);
+      // Pass the node's AI-planned description as writing context
+      return synthesizeSectionPrompt(section, config, node.description);
     }
     return `Write paper: ${node.description}`;
   }

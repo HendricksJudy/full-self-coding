@@ -29,6 +29,8 @@ export class WorkspaceManager {
       '',
       'input',
       'phases',
+      'phases/plan',
+      'phases/plan/output',
       'phases/scope',
       'phases/scope/output',
       'phases/design',

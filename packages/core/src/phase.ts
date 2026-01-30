@@ -3,6 +3,7 @@
  * Each phase represents a distinct stage of the research process.
  */
 export enum PhaseType {
+  PLAN       = 'plan',
   SCOPE      = 'scope',
   DESIGN     = 'design',
   COLLECT    = 'collect',
